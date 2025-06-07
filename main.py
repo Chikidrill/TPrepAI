@@ -235,6 +235,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+@app.get("/")
+async def root():
+    return {"status": "ok"}
 
 @app.get("/get_questions")
 async def get_questions():
