@@ -78,10 +78,9 @@ def parse_questions(text):
             q["wrong_answers"] = list(set(" ".join(ans.strip().splitlines()) for ans in wrong_answers if ans.strip()))  # Убираем дубли, соединяем строки
             logging.info(f"Обработан существующий ответ: {q['question']} -> {q['answers'][0]} | {q['wrong_answers']}")
 
-    print(f"DEBUG (список вопросов после обработки):\n{json.dumps(questions, indent=4, ensure_ascii=False)}")
+    logging.debug(f"DEBUG (список вопросов после обработки):\n{json.dumps(questions, indent=4, ensure_ascii=False)}")
 
     return remove_duplicates(questions)
-
 
 
 def generate_answers(question, tags):
@@ -156,6 +155,7 @@ def read_docx(file_path):
     text = "\n".join([para.text for para in doc.paragraphs])
     return text
 
+
 def read_pdf(file_path):
     """Читает текст из PDF-файла и возвращает его как строку."""
     doc = fitz.open(file_path)
@@ -168,9 +168,10 @@ def read_pdf_with_ocr(file_path):
     images = convert_from_path(file_path)  # Конвертируем PDF в изображения
     text = "\n".join([pytesseract.image_to_string(img, lang="rus+eng") for img in images])  # Распознаем текст
 
-    print(f"OCR текст: {text[:500]}")  # Для отладки
+    logging.info(f"OCR текст (первые 500 символов): {text[:500]}")  # Для отладки
 
     return text.strip()
+
 
 # Главная функция обработки тестов
 def process_test(file_path, language="ru"):
@@ -213,7 +214,7 @@ def process_test(file_path, language="ru"):
                 "language": language
             })
 
-        print(f"DEBUG (готовый JSON):\n{json.dumps(processed_questions, indent=4, ensure_ascii=False)}")
+        logging.info(f"DEBUG (готовый JSON):\n{json.dumps(processed_questions, indent=4, ensure_ascii=False)}")
         json_path = "output.json"
         with open(json_path, "w", encoding="utf-8") as json_file:
             json.dump(processed_questions, json_file, indent=4, ensure_ascii=False)
@@ -227,10 +228,9 @@ def process_test(file_path, language="ru"):
 # FastAPI сервер для обработки файлов через API
 app = FastAPI()
 
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Или укажите ["http://localhost:5176"]
+    allow_origins=["*"],  # Или укажи ["http://localhost:5176", "https://netlify-app-url"] для безопасности
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -248,14 +248,24 @@ async def get_questions():
 
 @app.post("/process_test")
 async def upload_file(file: UploadFile = File(...), language: str = "ru"):
+    logging.info(f"Получен файл: {file.filename}, язык: {language}")
     try:
         file_path = f"temp_{file.filename}"
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        logging.info(f"Файл сохранён: {file_path}")
 
         results = process_test(file_path, language)
+        logging.info(f"Обработка файла завершена успешно, вопросов: {len(results)}")
+
+        # Очистка временного файла после обработки
+        try:
+            os.remove(file_path)
+            logging.info(f"Временный файл удалён: {file_path}")
+        except Exception as e:
+            logging.warning(f"Не удалось удалить временный файл {file_path}: {e}")
+
         return {"questions": results}
     except Exception as e:
         logging.error(f"Ошибка обработки запроса: {e}")
         raise HTTPException(status_code=500, detail="Ошибка обработки запроса")
-
